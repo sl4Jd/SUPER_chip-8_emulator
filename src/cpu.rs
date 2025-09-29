@@ -309,8 +309,6 @@ impl CPU {
                             }
                         }
                     }
-                    self.pc += 2;
-                    return true;
                 }
                 for y_vert in 0..n {
                     let pixel = self.memory[(self.index + y_vert) as usize];

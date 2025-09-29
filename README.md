@@ -1,10 +1,10 @@
-Chip-8 emulator I made as first Rust project
+SUPER chip-8 emulator in rust with backwards compatibility
 # CLONE
 ```bash
-git clone https://github.com/sl4Jd/chip-8_emulator.git
+git clone https://github.com/sl4Jd/SUPER_chip-8_emulator.git
 ```
 ```bash
-cd chip-8_emulator
+cd SUPER_chip-8_emulator
 ```
 ```bash
 git submodule update --init --recursive 
@@ -15,5 +15,5 @@ cargo run "path/to/rom"
 ```
 Example
 ```bash
-cargo run "chip8_roms/games/Pong (1 player).ch8"
+cargo run "schip_roms/Matches.ch8"
 ```
