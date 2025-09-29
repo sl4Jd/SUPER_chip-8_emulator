@@ -21,9 +21,11 @@ pub const FONTSET: [u8; 80] = [
 
 pub struct CPU {
     // CPU fields here
+    pub height: usize,
+    pub width: usize,
     pub opcode: u16,
-    pub memory: [u8; 4096],
-    pub graphics: [u8; 64 * 32],
+    pub memory: [u8; 8192],
+    pub graphics: Vec<u8>,
     pub registers: [u8; 16],
     pub index: u16,
     pub pc: u16,
@@ -32,15 +34,17 @@ pub struct CPU {
     pub stack: [u16; 16],
     pub sp: u8,
     pub keys: [u8; 16],
-
-
+    pub is_schip: bool,
+    pub refresh_texture: bool,
 }
 impl CPU {
     pub fn new() -> Self {
         let mut cpu = CPU {
+            height: 32,
+            width: 64,
             opcode: 0,
-            memory: [0; 4096],
-            graphics: [0; 64 * 32],
+            memory: [0; 8192],
+            graphics: vec![0; 64 * 32],
             registers: [0; 16],
             index: 0,
             pc: 0x200,
@@ -49,6 +53,8 @@ impl CPU {
             stack: [0; 16],
             sp: 0,
             keys: [0; 16],
+            is_schip: false,
+            refresh_texture: false,
         };
         cpu.memory[0..FONTSET.len()].copy_from_slice(&FONTSET);
         cpu
@@ -63,17 +69,88 @@ impl CPU {
             | (self.memory[(self.pc + 1) as usize] as u16);
         
         // Decode and Execute Opcode
+
+        // 00CN - Scroll display down by N lines (SCHIP)
+        if ((self.opcode & 0xF0F0) ==  0x00C0) && self.is_schip {
+            let n = (self.opcode & 0x000F) as usize;
+            for y in (0..self.height - n).rev() {
+                for x in 0..self.width {
+                    self.graphics[(y + n) * self.width + x] = self.graphics[y * self.width + x];
+                }
+            }
+            // Clear top rows
+            for y in 0..n {
+                for x in 0..self.width {
+                    self.graphics[y * self.width + x] = 0;
+                }
+            }
+            self.pc += 2;
+            return true;
+        }
         match self.opcode & 0xF000 {
             0x0000 => match self.opcode & 0x00FF {
                 0x00E0 => {
                     // Clear the display
-                    self.graphics = [0; 64 * 32];
+                    self.graphics = vec![0; self.width * self.height];
                     self.pc += 2;
                 }
                 0x00EE => {
                     // Return from subroutine
                     self.sp -= 1;
                     self.pc = self.stack[self.sp as usize];
+                    self.pc += 2;
+                }
+                0x00FB => {
+                    // Scroll display right by 4 pixels (SCHIP)
+                    if self.is_schip {
+                        for y in 0..self.height {
+                            for x in (0..self.width).rev() {
+                                if x >= 4 {
+                                    self.graphics[y * self.width + x] = self.graphics[y * self.width + x - 4];
+                                } else {
+                                    self.graphics[y * self.width + x] = 0;
+                                }
+                            }
+                        }
+                    }
+                    self.pc += 2;
+                }
+                0x00FC => {
+                    // Scroll display left by 4 pixels (SCHIP)
+                    if self.is_schip {
+                        for y in 0..self.height {
+                            for x in 0..self.width {
+                                if x < self.width - 4 {
+                                    self.graphics[y * self.width + x] = self.graphics[y * self.width + x + 4];
+                                } else {
+                                    self.graphics[y * self.width + x] = 0;
+                                }
+                            }
+                        }
+                    }
+                    self.pc += 2;
+                }
+                0x00FE => {
+                    // Disable extended screen mode (SCHIP)
+                    if self.is_schip {
+                        self.width = 64;
+                        self.height = 32;
+                        self.graphics = vec![0; self.width * self.height];
+                        self.is_schip = false;
+                        self.refresh_texture = true;
+                    }
+                    self.pc += 2;
+                }
+                0x00FF => {
+                    // Enable extended screen mode (SCHIP)
+                    if !self.is_schip {
+                        self.width = 128;
+                        self.height = 64;
+                        self.graphics = vec![0; self.width * self.height];
+                        self.is_schip = true;
+                        self.refresh_texture = true;
+                        println!("Enabled SCHIP mode");
+                    }
                     self.pc += 2;
                 }
                 _ => {
@@ -210,19 +287,38 @@ impl CPU {
                 self.pc += 2;
             }
             0xD000 => {
-                // Draw n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision
+                // Draw n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision           
+                self.registers[0xF] = 0;
                 let x = self.registers[((self.opcode & 0x0F00) >> 8) as usize] as u16;
                 let y = self.registers[((self.opcode & 0x00F0) >> 4) as usize] as u16;
-                let height = (self.opcode & 0x000F) as u16;
-                self.registers[0xF] = 0;
-
-                for y_vert in 0..height {
+                let n = (self.opcode & 0x000F) as u16;
+                if n == 0  && self.is_schip {
+                    // SCHIP 16x16 sprite
+                    for y_vert in 0..16 {
+                        let pixel = self.memory[(self.index + y_vert) as usize];
+                        for x_vert in 0..16 {
+                            if (pixel & (0x80 >> x_vert)) != 0 {
+                                let x_coord = (x + x_vert) % self.width as u16;
+                                let y_coord = (y + y_vert) % self.height as u16;
+                                let index = (x_coord + (y_coord * self.width as u16)) as usize;
+                                if self.graphics[index] == 1 {
+                                    // Collision detected
+                                    self.registers[0xF] = 1;
+                                }
+                                self.graphics[index] ^= 1;
+                            }
+                        }
+                    }
+                    self.pc += 2;
+                    return true;
+                }
+                for y_vert in 0..n {
                     let pixel = self.memory[(self.index + y_vert) as usize];
                     for x_vert in 0..8 {
                         if (pixel & (0x80 >> x_vert)) != 0 {
-                            let x_coord = (x + x_vert) % 64;
-                            let y_coord = (y + y_vert) % 32;
-                            let index = (x_coord + (y_coord * 64)) as usize;
+                            let x_coord = (x + x_vert) % self.width as u16;
+                            let y_coord = (y + y_vert) % self.height as u16;
+                            let index = (x_coord + (y_coord * self.width as u16)) as usize;
                             if self.graphics[index] == 1 {
                                 // Collision detected
                                 self.registers[0xF] = 1;

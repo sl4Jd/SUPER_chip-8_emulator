@@ -40,7 +40,7 @@ fn init() -> (Sdl, TextureCreator<video::WindowContext>, Canvas<Window>) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        .window("CHIP-8 Emulator", 512, 256)
+        .window("CHIP-8 Emulator", 1024, 512)
         .position_centered()
         .build()
         .unwrap();
@@ -95,10 +95,10 @@ pub fn load_rom<P: AsRef<Path>>(filename: P, cpu: &mut CPU) -> io::Result<()> {
 
 pub fn build_texture(system: &CPU, texture: &mut Texture) {
     texture.with_lock(None, |pixels: &mut [u8], _pitch: usize| {
-        for y in 0..32 {
-            for x in 0..64 {
-                let offset = (y * 64 + x) * 4; // 4 bytes per pixel
-                let color = if system.graphics[y * 64 + x] == 1 {
+        for y in 0..system.height {
+            for x in 0..system.width {
+                let offset = (y * system.width + x) * 4; // 4 bytes per pixel
+                let color = if system.graphics[y * system.width + x] == 1 {
                     [0xFF, 0xFF, 0xFF, 0xFF] // white pixel RGBA
                 } else {
                     [0x00, 0x00, 0x00, 0xFF] // black pixel RGBA
@@ -123,9 +123,6 @@ fn main() {
 
     // Initialize SDL2
     let (sdl_context, texture_creator, mut canvas) = init();
-    let mut texture = texture_creator
-        .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, 64, 32)
-        .unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     // Initialize CPU
     let mut cpu = Box::new(CPU::new());
@@ -134,6 +131,11 @@ fn main() {
         eprintln!("Failed to load ROM: {}", err);
         return;
     }
+
+    // Create texture for graphics
+    let mut texture = texture_creator
+        .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.height as u32, cpu.width as u32)
+        .unwrap();
 
     // Audio
     let audio_subsystem = sdl_context.audio().unwrap();
@@ -193,9 +195,15 @@ fn main() {
                 _ => {}
             }
         }
-
         // Update at 60Hz
         if last_cycle_time.elapsed() >= timer_duration {
+            if cpu.refresh_texture {
+                texture = texture_creator
+                    .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.height as u32, cpu.width as u32)
+                    .unwrap();
+                cpu.refresh_texture = false;
+            }
+
             // Update timers
             if cpu.delay_timer > 0 {
                 cpu.delay_timer -= 1;
@@ -213,8 +221,7 @@ fn main() {
             // Update texture with current graphics state
             build_texture(&cpu, &mut texture);
 
-            // Destination rectangle (scale CHIP-8 64x32 to 512x256)
-            let dest = Rect::new(0, 0, 512, 256);
+            let dest = Rect::new(0, 0, 1024, 512);
 
             // Copy the texture to the canvas
             canvas.copy(&texture, None, Some(dest)).unwrap();
