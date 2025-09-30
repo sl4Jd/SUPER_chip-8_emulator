@@ -134,7 +134,7 @@ fn main() {
 
     // Create texture for graphics
     let mut texture = texture_creator
-        .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.height as u32, cpu.width as u32)
+        .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.width as u32, cpu.height as u32)
         .unwrap();
 
     // Audio
@@ -199,7 +199,7 @@ fn main() {
         if last_cycle_time.elapsed() >= timer_duration {
             if cpu.refresh_texture {
                 texture = texture_creator
-                    .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.height as u32, cpu.width as u32)
+                    .create_texture(PixelFormatEnum::ARGB8888, sdl2::render::TextureAccess::Streaming, cpu.width as u32, cpu.height as u32)
                     .unwrap();
                 cpu.refresh_texture = false;
             }
